@@ -96,7 +96,10 @@ for file in get_changed_java_files():
         v['file'] = file  # track file in summary
         violations_total.append(v)
         try:
-            post_inline_comment(file, v["line"], f"🔍 **{v['rule']}**\n{v['explanation']}\n💡 {v['suggestion']}")
+            post_inline_comment(f"**{v['rule']}**\n\n"
+    f"{v['explanation']}\n\n"
+    f"💡 **Suggestion**: {v['suggestion']}\n\n"
+    f"```java\n{v.get('code_fix', '// no fix provided')}\n```")
         except Exception as e:
             print(f"Failed to post inline comment: {e}")
 
