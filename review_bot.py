@@ -5,7 +5,7 @@ import requests
 import openai
 
 # Set up OpenAI
-openai.api_key = os.environ["OPENAI_API_KEY"]
+client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]
 GITHUB_SHA = os.environ["GITHUB_SHA"]
@@ -33,15 +33,16 @@ def call_llm(diff_text):
 
     user_message = f"Review this Java diff:\n\n{diff_text}"
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
-        ],
+    messages=[
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": user_input}
+    ],
         temperature=0.2
     )
-    return json.loads(response.choices[0].message["content"])
+    return json.loads(response.choices[0].message.content)
+    
 
 def post_comment(file_path, line, message):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_NUMBER}/comments"
