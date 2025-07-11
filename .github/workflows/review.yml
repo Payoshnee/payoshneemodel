@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout PR code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # <-- this is critical
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -19,7 +21,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          pip install openai requests
 
       - name: Run AutoReviewBot
         env:
