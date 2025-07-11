@@ -51,29 +51,21 @@ Respond with a JSON list of violations:
     )
     return json.loads(response.choices[0].message.content)
 
-# def post_inline_comment(file_path, line, body):
-#     url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_NUMBER}/comments"
-#     headers = {
-#         "Authorization": f"Bearer {GITHUB_TOKEN}",
-#         "Accept": "application/vnd.github.v3+json"
-#     }
-def post_summary_comment(body):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/issues/{PR_NUMBER}/comments"
+def post_inline_comment(file_path, line, body):
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_NUMBER}/comments"
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-    requests.post(url, headers=headers, json={"body": body})
-    data = {
+    payload = {
         "body": body,
         "commit_id": GITHUB_SHA,
         "path": file_path,
         "line": line,
         "side": "RIGHT"
     }
-    response = requests.post(url, headers=headers, json=data)
-    print(f"Posted comment on {file_path}:{line} → {response.status_code}")
-    print(response.text)
+    response = requests.post(url, headers=headers, json=payload)
+    print(f"Posted inline comment → {response.status_code}: {response.text}")
 
 def post_summary_comment(body):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues/{PR_NUMBER}/comments"
