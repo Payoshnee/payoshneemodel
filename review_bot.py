@@ -51,12 +51,19 @@ Respond with a JSON list of violations:
     )
     return json.loads(response.choices[0].message.content)
 
-def post_inline_comment(file_path, line, body):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_NUMBER}/comments"
+# def post_inline_comment(file_path, line, body):
+#     url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_NUMBER}/comments"
+#     headers = {
+#         "Authorization": f"Bearer {GITHUB_TOKEN}",
+#         "Accept": "application/vnd.github.v3+json"
+#     }
+def post_summary_comment(body):
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/issues/{PR_NUMBER}/comments"
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
+    requests.post(url, headers=headers, json={"body": body})
     data = {
         "body": body,
         "commit_id": GITHUB_SHA,
