@@ -106,7 +106,7 @@ for file in get_changed_java_files():
 # ✅ Summary fallback
 if violations_total:
     summary = "\n\n".join([
-        f"🔍 **{v['rule']}** in `{v['file']}` (line {v['line']}):\n{v['explanation']}\n💡 {v['suggestion']}"
+        f"🔍 **{v['rule']}** in `{v['file']}` (line {v['line']}):\n{v['explanation']}\n💡 {v['suggestion']}\n```java\n{v.get('code_fix', '// no fix provided')}\n```"
         for v in violations_total
     ])
     post_summary_comment(f"### 🧠 AutoReviewBot Summary\n\n{summary}")
