@@ -6,6 +6,9 @@ import openai
 import yaml
 import time
 import csv
+import datetime
+import pathlib
+import re
 
 
 # === ENV ===
@@ -17,16 +20,30 @@ GITHUB_REF = os.environ["GITHUB_REF"]
 PR_NUMBER = GITHUB_REF.split("/")[-2]
 
 # === RULES ===
-with open("rules.yaml", "r") as f:
-    RULES = yaml.safe_load(f)["rules"]
+for file in get_changed_java_files():
+    language = detect_language(file)
+    if not language:
+        print(f"Skipping unsupported file: {file}")
+        continue
 
-RULE_PROMPT = "\n".join([
-    f"- id: {r['id']}  # {r['hint']}\n  severity: {r['severity']}\n  hint: \"{r['hint']}\""
-    for r in RULES
-])
+    rules = load_rules_for_language(language)
+    if not rules:
+        print(f"No rules found for language: {language}")
+        continue
+
+    rule_prompt = "\n".join([
+        f"- id: {r['id']}  # {r['hint']}\n  severity: {r['severity']}\n  hint: \"{r['hint']}\""
+        for r in rules
+    ])
+
+
 
 LOG_FILE = "autoreviewbot_violations_log.csv"
 
+    for pattern in patterns:
+        text = re.sub(pattern, "<REDACTED_SECRET>", text, flags=re.IGNORECASE)
+
+    return text
 
 def get_changed_java_files():
     result = subprocess.run(["git", "diff", "--name-only", "origin/main"], stdout=subprocess.PIPE, check=True)
@@ -39,10 +56,15 @@ def get_diff(file_path):
 
 
 def redact_sensitive_content(text):
-    return text.replace(os.environ.get("OPENAI_API_KEY", "<redacted>"), "<API_KEY>")
+    patterns = [
+        r"(API[_-]?KEY\s*=\s*['\"]?[A-Za-z0-9_\-]+['\"]?)",  # API_KEY = '...'
+        r"(BEARER\s+[A-Za-z0-9\.\-_]+)",                    # Bearer token
+        r"(PASSWORD\s*=\s*['\"]?.+?['\"]?)",                 # password = "..."
+        r"(AWS[_-]SECRET[_-]ACCESS[_-]KEY\s*=\s*['\"]?[A-Za-z0-9/\+=]+['\"]?)",
+        r"(['\"]?ghp_[A-Za-z0-9]{30,}['\"]?)",               # GitHub PAT token
+    ]
 
-
-def call_llm(diff_text):
+def call_llm(diff_text, rule_prompt):
     diff_text = redact_sensitive_content(diff_text)
     prompt = f"""
 You are AutoReviewBot, an automated reviewer that enforces internal Java rules.  
@@ -168,7 +190,7 @@ def log_violation(v):
             v["suggestion"],
             v.get("code_fix", "")
         ])
-        
+
 def maintainer_override_exists():
     """Check if the PR has a label like 'override-autoreview' to skip validation."""
     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues/{PR_NUMBER}/labels"
@@ -188,6 +210,24 @@ def maintainer_override_exists():
         print(f"[ERROR] While checking override label: {e}")
         return False
 
+# adding a feedback loop and logging system
+def log_violation_data(violations, pr_number, file_name):
+    log_dir = pathlib.Path("logs")
+    log_dir.mkdir(exist_ok=True)
+
+    log_file = log_dir / "violations_log.jsonl"
+    timestamp = datetime.datetime.utcnow().isoformat()
+
+    log_entry = {
+        "timestamp": timestamp,
+        "pr_number": pr_number,
+        "file": file_name,
+        "violations": violations,
+    }
+
+    with open(log_file, "a") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
 # === MAIN ===
 if not os.path.exists(LOG_FILE):
     with open(LOG_FILE, "w", newline="") as csvfile:
@@ -199,26 +239,71 @@ if maintainer_override_exists():
     post_status("success", "Review skipped by maintainer override.")
     exit(0)
 
-
-violations_total = []
+# 1. Collect diffs
+file_diffs = []
 for file in get_changed_java_files():
     diff = get_diff(file)
-    violations = call_llm(diff)
-    diff_positions = get_pr_diff_positions(file)
+    file_diffs.append((file, diff))
 
+# 2. Batch diffs (max 3500 chars to be safe with prompt size)
+def batch_files(files_diffs, max_chars=3500):
+    batches = []
+    current_batch = []
+    current_size = 0
+    for file, diff in files_diffs:
+        size = len(diff)
+        if current_size + size > max_chars and current_batch:
+            batches.append(current_batch)
+            current_batch = [(file, diff)]
+            current_size = size
+        else:
+            current_batch.append((file, diff))
+            current_size += size
+    if current_batch:
+        batches.append(current_batch)
+    return batches
+
+batches = batch_files(file_diffs)
+
+# 3. Call LLM for each batch and post comments
+violations_total = []
+for batch in batches:
+    batch_diff_text = "\n\n".join(diff for _, diff in batch)
+    violations = call_llm(batch_diff_text)
     for v in violations:
-        v['file'] = file
+        file_path = v.get("file") or batch[0][0]  # fallback
+        v['file'] = file_path
         violations_total.append(v)
-        body = f"**{v['rule']}**\n\n{v['explanation']}\n💡 Suggestion: {v['suggestion']}\n```java\n{v.get('code_fix', '// no fix provided')}\n```"
+        log_violation_data(violations, PR_NUMBER, file)
         position = diff_positions.get(v['line'])
-
         if position:
             try:
-                post_inline_comment(GITHUB_REPO, PR_NUMBER, body, GITHUB_SHA, file, position)
+                body = f"**{v['rule']}**\n\n{v['explanation']}\n\n💡 Suggestion: {v['suggestion']}\n\n```java\n{v.get('code_fix', '// no fix provided')}\n```"
+                post_inline_comment(GITHUB_REPO, PR_NUMBER, body, GITHUB_SHA, file_path, v['line'])
             except Exception as e:
-                print(f"[ERROR] Inline comment failed: {e}")
+            print(f"Failed to post inline comment: {e}")
         else:
-            print(f"[WARN] No diff position found for {file} line {v['line']}")
+           print(f"[WARN] No diff position found for {file} line {v['line']}")
+
+# violations_total = []
+# for file in get_changed_java_files():
+#     diff = get_diff(file)
+#     violations = call_llm(diff)
+#     diff_positions = get_pr_diff_positions(file)
+
+#     for v in violations:
+#         v['file'] = file
+#         violations_total.append(v)
+#         body = f"**{v['rule']}**\n\n{v['explanation']}\n💡 Suggestion: {v['suggestion']}\n```java\n{v.get('code_fix', '// no fix provided')}\n```"
+#         position = diff_positions.get(v['line'])
+
+#         if position:
+#             try:
+#                 post_inline_comment(GITHUB_REPO, PR_NUMBER, body, GITHUB_SHA, file, position)
+#             except Exception as e:
+#                 print(f"[ERROR] Inline comment failed: {e}")
+#         else:
+#             print(f"[WARN] No diff position found for {file} line {v['line']}")
 
 if violations_total:
     summary = "\n\n".join([

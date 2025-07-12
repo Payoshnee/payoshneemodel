@@ -7,18 +7,23 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    concurrency:
-      group: review-${{ github.ref }}
+    timeout-minutes: 10  # ⏱ Prevent long-running jobs
+    concurrency:         # 🚦 Cancel previous runs on the same PR
+      group: review-${{ github.head_ref }}
       cancel-in-progress: true
 
     steps:
       - name: Checkout PR code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # important to compare against base branch
+          fetch-depth: 0  # 👀 Required to get full git history for diffing
 
-      - name: Cache pip
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip dependencies
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
@@ -26,13 +31,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install Python requirements
+        run: |
+          pip install -r requirements.txt
 
       - name: Run AutoReviewBot
         env:
