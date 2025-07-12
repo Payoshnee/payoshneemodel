@@ -168,7 +168,25 @@ def log_violation(v):
             v["suggestion"],
             v.get("code_fix", "")
         ])
-
+        
+def maintainer_override_exists():
+    """Check if the PR has a label like 'override-autoreview' to skip validation."""
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/issues/{PR_NUMBER}/labels"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            labels = [label['name'] for label in response.json()]
+            return "override-autoreview" in labels
+        else:
+            print(f"[WARN] Failed to fetch labels → {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"[ERROR] While checking override label: {e}")
+        return False
 
 # === MAIN ===
 if not os.path.exists(LOG_FILE):
