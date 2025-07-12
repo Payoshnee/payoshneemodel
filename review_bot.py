@@ -192,8 +192,21 @@ for file in get_changed_java_files():
 
         pos = diff_positions.get(v["line"])
         if pos:
-            comment_body = f"**{v['rule']}**\n\n{v['explanation']}\n\n💡 {v['suggestion']}\n\n```java\n{v.get('code_fix', '// no fix provided')}\n```"
-            post_inline_comment(GITHUB_REPO, PR_NUMBER, comment_body, GITHUB_SHA, file, pos)
+            required_keys = ("rule", "explanation", "suggestion", "line")
+if all(k in v for k in required_keys):
+    comment_body = (
+        f"**{v['rule']}**\n\n"
+        f"{v['explanation']}\n\n"
+        f"💡 {v['suggestion']}\n\n"
+        f"```java\n{v.get('code_fix', '// no fix provided')}\n```"
+    )
+    try:
+        post_inline_comment(GITHUB_REPO, PR_NUMBER, comment_body, GITHUB_SHA, file_path, v['line'])
+    except Exception as e:
+        print(f"[ERROR] Failed to post inline comment: {e}")
+else:
+    print(f"[WARN] Skipping malformed violation: {v}")
+
 
 if violations_total:
     summary_lines = []
