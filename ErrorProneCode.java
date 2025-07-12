@@ -28,8 +28,8 @@ public class ErrorProneCode {
             File file = new File("data.txt");  
             file.read();  
         } catch (Exception e)  
-            System.out.println("Error: " + e.getmessage());  
-
+            System.out.println("Error: " + e.getmessage());
+            System.out.println("Error: " + e.getmessage())
 
         int result = 10 / 0;
 
