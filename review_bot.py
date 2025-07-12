@@ -35,14 +35,13 @@ for file in get_changed_java_files():
         f"- id: {r['id']}  # {r['hint']}\n  severity: {r['severity']}\n  hint: \"{r['hint']}\""
         for r in rules
     ])
-
-
-
 LOG_FILE = "autoreviewbot_violations_log.csv"
-
+def redact_sensitive_content(text):
+    # Add more sensitive patterns here if needed
+    patterns = [os.environ.get("OPENAI_API_KEY", "")]
     for pattern in patterns:
-        text = re.sub(pattern, "<REDACTED_SECRET>", text, flags=re.IGNORECASE)
-
+        if pattern:
+            text = text.replace(pattern, "<API_KEY>")
     return text
 
 def get_changed_java_files():
