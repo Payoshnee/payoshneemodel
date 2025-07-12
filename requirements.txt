@@ -1,2 +1,12 @@
+# Standard libraries (included for reference; not needed for pip)
+# os
+# subprocess
+# json
+# time
+# csv
+# datetime
+
+# Third-party libraries
 openai
+PyYAML
 requests
