@@ -196,11 +196,19 @@ for file in get_changed_java_files():
             post_inline_comment(GITHUB_REPO, PR_NUMBER, comment_body, GITHUB_SHA, file, pos)
 
 if violations_total:
-    summary = "\n\n".join([
-        f"🔍 **{v['rule']}** in `{v['file']}` (line {v['line']}):\n{v['explanation']}\n💡 {v['suggestion']}\n```java\n{v.get('code_fix', '// no fix provided')}\n```"
-        for v in violations_total
-    ])
-    post_summary_comment(f"### 🧠 AutoReviewBot Summary\n\n{summary}")
+    summary_lines = []
+    for v in violations_total:
+        if all(k in v for k in ("rule", "file", "line", "explanation", "suggestion")):
+            summary_lines.append(
+                f"🔍 **{v['rule']}** in `{v['file']}` (line {v['line']}):\n"
+                f"{v['explanation']}\n💡 {v['suggestion']}\n"
+                f"```java\n{v.get('code_fix', '// no fix provided')}\n```"
+            )
+        else:
+            print(f"[WARN] Skipping invalid violation object: {v}")
+
+    if summary_lines:
+        post_summary_comment(f"### 🧠 AutoReviewBot Summary\n\n" + "\n\n".join(summary_lines))
 
 post_status(
     "failure" if any(v["severity"] == "error" for v in violations_total) else "success",
