@@ -7,12 +7,24 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: review-${{ github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout PR code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # <-- this is critical
+          fetch-depth: 0  # important to compare against base branch
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -20,15 +32,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install openai requests
+        run: pip install -r requirements.txt
 
       - name: Run AutoReviewBot
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_REF: ${{ github.ref }}
-        run: |
-          python review_bot.py
+        run: python review_bot.py
