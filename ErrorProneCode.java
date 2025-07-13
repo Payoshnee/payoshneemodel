@@ -22,7 +22,7 @@ public class ErrorProneCode {
 
 
         ErrorProneCode.doSomething();  
-
+        ErrorProneCode.doSomething(); 
 
         try {
             File file = new File("data.txt");  
