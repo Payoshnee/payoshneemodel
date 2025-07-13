@@ -43,12 +43,34 @@ def redact_sensitive_content(text):
 
 def call_llm(diff_text):
     prompt = f"""
-You are AutoReviewBot, an automated reviewer that enforces internal Java rules.
-Respond ONLY with a valid JSON array (no markdown).
-<<DIFF
-{diff_text}
-DIFF
-If no violations, output [].
+You are AutoReviewBot, an automated reviewer that enforces internal Java rules.  
+Respond ONLY with a valid JSON array (no markdown).  
+ 
+<<RULES  
+{RULE_PROMPT} 
+RULES  
+ 
+<<SCHEMA  
+Each array element must have:  
+rule (string from id above)  
+line (integer, line number in NEW file)  
+explanation (<=200 chars)  
+suggestion (<=100 chars)  
+severity (error|warning|info)  
+code_fix (string, may be empty)  
+SCHEMA  
+ 
+<<DIFF  
+{diff_text}  
+DIFF  
+ 
+TASKS  
+1. Review only the changed lines in <<DIFF>> against <<RULES>>.  
+2. Emit a JSON array that validates against <<SCHEMA>>.  
+3. Include at most 40 elements.  
+4. Think through steps internally but output ONLY the JSON array.  
+5. If no violations, output [].  
+END  
 """
     for attempt in range(3):
         try:
