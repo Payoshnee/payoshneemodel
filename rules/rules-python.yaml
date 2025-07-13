@@ -1,0 +1,12 @@
+rules:
+  - id: NAMING_001
+    severity: error
+    hint: "Function names should be snake_case."
+
+  - id: TYPE_002
+    severity: warning
+    hint: "Use type hints for function arguments and return types."
+
+  - id: PRINT_003
+    severity: info
+    hint: "Avoid using print statements in production code."

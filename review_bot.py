@@ -1,3 +1,4 @@
+# review_bot.py (FINAL PATCHED VERSION)
 import os
 import subprocess
 import json
@@ -6,8 +7,10 @@ import openai
 import yaml
 import time
 import csv
+import re
 from datetime import datetime
 
+# === ENV ===
 client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]
@@ -15,16 +18,29 @@ GITHUB_SHA = os.environ["GITHUB_SHA"]
 GITHUB_REF = os.environ["GITHUB_REF"]
 PR_NUMBER = GITHUB_REF.split("/")[-2]
 
-# === Load Rules from YAML ===
-with open("rules.yaml", "r") as f:
-    RULES = yaml.safe_load(f)["rules"]
+# === RULES ===
+with open("rules/rules-java.yaml", "r") as f:
+    CONFIG = yaml.safe_load(f)
+    LANGUAGE = "java"
+    RULES = CONFIG.get(LANGUAGE, {}).get("rules", CONFIG.get("rules", []))
 
 RULE_PROMPT = "\n".join([
-    f"- id: {r['id']}  # {r['hint']}\n  severity: {r['severity']}\n  hint: \"{r['hint']}\""
+    f"- id: {r['id']}  # {r['hint']}\n  severity: {r['severity']}\n  hint: \"{r['hint']}\"\n  weight: {r.get('weight', 1.0)}"
     for r in RULES
 ])
 
 LOG_FILE = "autoreviewbot_violations_log.csv"
+
+# === UTILS ===
+def retry_request(func, retries=3, delay=2):
+    for attempt in range(retries):
+        try:
+            return func()
+        except Exception as e:
+            print(f"[WARN] Attempt {attempt+1} failed: {e}")
+            time.sleep(delay)
+    print(f"[ERROR] All {retries} attempts failed.")
+    return None
 
 def get_changed_java_files():
     result = subprocess.run(["git", "diff", "--name-only", "origin/main"], stdout=subprocess.PIPE, check=True)
@@ -35,28 +51,23 @@ def get_diff(file_path):
     return result.stdout.decode()
 
 def redact_sensitive_content(text):
-    return text.replace(os.environ.get("OPENAI_API_KEY", ""), "<API_KEY>")
-
-def maintainer_override_exists():
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/issues/{PR_NUMBER}/comments"
-    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        for comment in response.json():
-            if "#autoreview: override" in comment["body"].lower():
-                return True
-    return False
+    redactions = [
+        (r"(?i)(api[-_]?key\s*[:=]\s*)['\"]?[a-z0-9_\-]{16,}['\"]?", r"\1<REDACTED>"),
+        (r"(?i)(secret|token|passwd|password)\s*[:=]\s*['\"]?.+?['\"]?", r"\1=<REDACTED>"),
+        (r"(OPENAI_API_KEY|GITHUB_TOKEN)\s*=\s*['\"]?.+?['\"]?", r"\1=<REDACTED>")
+    ]
+    for pattern, repl in redactions:
+        text = re.sub(pattern, repl, text)
+    return text
 
 def call_llm(diff_text):
     diff_text = redact_sensitive_content(diff_text)
     prompt = f"""
 You are AutoReviewBot, an automated reviewer that enforces internal Java rules.  
 Respond ONLY with a valid JSON array (no markdown).  
-
 <<RULES
 {RULE_PROMPT}
 RULES
-
 <<SCHEMA
 Each array element must have:  
 rule (string from id above)  
@@ -66,11 +77,9 @@ suggestion (<=100 chars)
 severity (error|warning|info)  
 code_fix (string, may be empty)  
 SCHEMA
-
 <<DIFF
 {diff_text}
 DIFF
-
 TASKS
 1. Review only the changed lines in <<DIFF>> against <<RULES>>.  
 2. Emit a JSON array that validates against <<SCHEMA>>.  
@@ -79,16 +88,44 @@ TASKS
 5. If no violations, output [].
 END
 """
-    try:
+    def do_openai_call():
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2
         )
         return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        print(f"[ERROR] OpenAI call failed: {e}")
-        return []
+
+    result = retry_request(do_openai_call)
+    return result if result else []
+
+def get_pr_diff_positions(file_path):
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_NUMBER}/files"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise Exception("Failed to fetch PR files")
+    diff_map = {}
+    for file in response.json():
+        if file["filename"] != file_path:
+            continue
+        position = 0
+        new_line = None
+        for line in file.get("patch", "").split("\n"):
+            position += 1
+            if line.startswith("@@"):
+                hunk = line.split(" ")
+                new_line = int(hunk[2].split(",")[0].replace("+", "")) - 1
+            elif line.startswith("+"):
+                new_line += 1
+                diff_map[new_line] = position
+            elif not line.startswith("-"):
+                new_line += 1
+        break
+    return diff_map
 
 def post_inline_comment(repo, pr_number, body, commit_id, path, position):
     url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/comments"
@@ -100,14 +137,13 @@ def post_inline_comment(repo, pr_number, body, commit_id, path, position):
         "body": body,
         "commit_id": commit_id,
         "path": path,
-        "line": position,
-        "side": "RIGHT"
+        "position": position
     }
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        print(f"Posted inline comment → {response.status_code}: {response.text}")
-    except Exception as e:
-        print(f"[ERROR] Failed to post inline comment: {e}")
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code != 201:
+        print(f"[ERROR] Inline comment failed: {response.status_code}\n{response.text}")
+    else:
+        print(f"✅ Posted inline comment at {path} (position {position})")
 
 def post_summary_comment(body):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues/{PR_NUMBER}/comments"
@@ -134,6 +170,7 @@ def log_violation(v):
         writer = csv.writer(csvfile)
         writer.writerow([
             datetime.utcnow().isoformat(),
+            v.get("model", "gpt-4"),
             v["file"],
             v["line"],
             v["rule"],
@@ -143,11 +180,31 @@ def log_violation(v):
             v.get("code_fix", "")
         ])
 
-# === MAIN ===
+def maintainer_override_exists():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/issues/{PR_NUMBER}/labels"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            labels = [label['name'] for label in response.json()]
+            return "override-autoreview" in labels
+        else:
+            print(f"[WARN] Failed to fetch labels → {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"[ERROR] While checking override label: {e}")
+        return False
+
+# === MAIN EXECUTION ===
+start_time = time.time()
+
 if not os.path.exists(LOG_FILE):
     with open(LOG_FILE, "w", newline="") as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["timestamp", "file", "line", "rule", "severity", "explanation", "suggestion", "code_fix"])
+        writer.writerow(["timestamp", "model", "file", "line", "rule", "severity", "explanation", "suggestion", "code_fix"])
 
 if maintainer_override_exists():
     print("[INFO] Maintainer override detected. Skipping review.")
@@ -155,20 +212,22 @@ if maintainer_override_exists():
     exit(0)
 
 violations_total = []
-for file in get_changed_java_files():
+changed_files = get_changed_java_files()
+for file in changed_files:
     diff = get_diff(file)
     violations = call_llm(diff)
+    diff_positions = get_pr_diff_positions(file)
     for v in violations:
         v['file'] = file
         violations_total.append(v)
         log_violation(v)
-        try:
-            body = f"**{v['rule']}**\n\n{v['explanation']}\n💡 Suggestion: {v['suggestion']}\n```java\n{v.get('code_fix', '// no fix provided')}\n```"
-            post_inline_comment(GITHUB_REPO, PR_NUMBER, body, GITHUB_SHA, file, v['line'])
-        except Exception as e:
-            print(f"[ERROR] Inline comment failed: {e}")
+        body = f"**{v['rule']}**\n\n{v['explanation']}\n💡 Suggestion: {v['suggestion']}\n```java\n{v.get('code_fix', '// no fix provided')}\n```"
+        position = diff_positions.get(v['line'])
+        if position:
+            retry_request(lambda: post_inline_comment(GITHUB_REPO, PR_NUMBER, body, GITHUB_SHA, file, position))
+        else:
+            print(f"[WARN] No diff position found for {file} line {v['line']}")
 
-# Post summary
 if violations_total:
     summary = "\n\n".join([
         f"🔍 **{v['rule']}** in `{v['file']}` (line {v['line']}):\n{v['explanation']}\n💡 {v['suggestion']}\n```java\n{v.get('code_fix', '// no fix provided')}\n```"
@@ -176,8 +235,12 @@ if violations_total:
     ])
     post_summary_comment(f"### 🧠 AutoReviewBot Summary\n\n{summary}")
 
-# Set status
-if any(v["severity"] == "error" for v in violations_total):
-    post_status("failure", "Critical rule violations found")
-else:
-    post_status("success", "All checks passed")
+post_status(
+    "failure" if any(v["severity"] == "error" for v in violations_total) else "success",
+    "Critical rule violations found" if any(v["severity"] == "error" for v in violations_total) else "All checks passed"
+)
+
+duration = round(time.time() - start_time, 2)
+print(f"[METRIC] Review completed in {duration} seconds with {len(violations_total)} violations.")
+with open("review_metrics.log", "a") as f:
+    f.write(f"{datetime.utcnow().isoformat()}, {duration} sec, {len(violations_total)} violations\n")

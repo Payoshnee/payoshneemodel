@@ -1,0 +1,51 @@
+java:
+  rules:
+    - id: JAVA_CONVENTIONS_001
+      severity: warning
+      hint: "Follow Java naming conventions: lowercase for packages, PascalCase for classes, ALL_CAPS for constants, camelCase for variables."
+      weight: 0.8
+
+    - id: LAMBDAS_STREAMS_002
+      severity: warning
+      hint: "Use lambdas and streams for cleaner, functional-style code instead of imperative loops."
+      weight: 0.7
+
+    - id: NULL_HANDLING_003
+      severity: error
+      hint: "Avoid returning null. Use Optional, null checks, or annotations like @Nullable/@NonNull to prevent NullPointerExceptions."
+      weight: 1.0
+
+    - id: MUTABLE_STATE_004
+      severity: error
+      hint: "Avoid exposing mutable internal state; return defensive copies and clone inputs in constructors."
+      weight: 1.0
+
+    - id: EXCEPTION_HANDLING_005
+      severity: error
+      hint: "Catch specific exceptions before general ones. Use checked exceptions for recoverable scenarios."
+      weight: 1.0
+
+    - id: DATA_STRUCTURE_CHOICE_006
+      severity: warning
+      hint: "Use the most appropriate Java collection type (Map, List, Set) depending on your needs."
+      weight: 0.6
+
+    - id: ACCESS_CONTROL_007
+      severity: warning
+      hint: "Default to private for fields and methods unless access by other classes is explicitly required."
+      weight: 0.8
+
+    - id: CODE_TO_INTERFACE_008
+      severity: info
+      hint: "Declare variables and parameters using interface types (e.g., List) rather than implementations (e.g., ArrayList)."
+      weight: 0.5
+
+    - id: AVOID_UNNEEDED_INTERFACE_009
+      severity: info
+      hint: "Don’t define interfaces unless there is a need for multiple implementations or polymorphism."
+      weight: 0.5
+
+    - id: EQUALS_HASHCODE_010
+      severity: error
+      hint: "Override hashCode() when equals() is overridden to ensure correct behavior in Hash-based collections."
+      weight: 1.0

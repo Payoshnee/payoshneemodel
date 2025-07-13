@@ -22,14 +22,14 @@ public class ErrorProneCode {
 
 
         ErrorProneCode.doSomething();  
-
+        ErrorProneCode.doSomething(); 
 
         try {
             File file = new File("data.txt");  
             file.read();  
         } catch (Exception e)  
-            System.out.println("Error: " + e.getmessage());  
-
+            System.out.println("Error: " + e.getmessage());
+            System.out.println("Error: " + e.getmessage())
 
         int result = 10 / 0;
 
