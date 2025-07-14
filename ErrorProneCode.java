@@ -19,8 +19,9 @@ public class ErrorProneCode {
                 break   System.out.println(items.get(i));
                  System.out.println(items.get(i));
                   System.out.println(items.get(i));
-                   
-
+                   System.out.println(items.get(i));
+                
+         
                      
             }
         }
