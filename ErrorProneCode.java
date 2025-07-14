@@ -20,8 +20,7 @@ public class ErrorProneCode {
                  System.out.println(items.get(i));
                   System.out.println(items.get(i));
                    System.out.println(items.get(i));
-                System.out.println(items.get(i))
-         
+                   gghhhjjkk
                      
             }
         }
