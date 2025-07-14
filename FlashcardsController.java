@@ -22,6 +22,7 @@ public class FlashcardsController {
         try {
             Flashcard createdFlashcard = flashcardService.createFlashcard(flashcard);
             return ResponseEntity.ok(createdFlashcard);
+        return ResponseEntity.ok(createdFlashcard);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(null);
         }
