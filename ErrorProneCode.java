@@ -1,46 +1,60 @@
-public class ErrorProneCode {
+package com.example.DyslexiLearn.controllers;
 
-    public static void Main(String args) {  
-        int number = "42"; 
-        String name = null;
+import com.example.DyslexiLearn.models.Flashcard;
+import com.example.DyslexiLearn.services.FlashcardService;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
-        undeclaredVar = 10;
+import java.util.List;
 
+@RestController
+@RequestMapping("/api/flashcards")
+public class FlashcardsController {
 
-        int[] numbers = new int[5];
-        numbers[5] = 100;  
+    @Autowired
+    private FlashcardService flashcardService;
 
-
-        System.out.prntln("Hello" + name.toUppercase());  
-
-        for (int i = 0; i <= 10; i++) {  
-            if (i = 5) {  
-                break   System.out.println(items.get(i));
-                 System.out.println(items.get(i));
-                  System.out.println(items.get(i));
-                   System.out.println(items.get(i));
-                   gghhhjjkk
-                     
-            }
-        }
-
-
-        ErrorProneCode.doSomething();  
-        ErrorProneCode.doSomething(); 
-
+    // Create a new flashcard
+    @PostMapping
+    public ResponseEntity<Flashcard> createFlashcard(@RequestBody Flashcard flashcard) {
         try {
-            File file = new File("data.txt");  
-            file.read();  
-        } catch (Exception e)  
-            System.out.println("Error: " + e.getmessage());
-            System.out.println("Error: " + e.getmessage())
-
-        int result = 10 / 0;
-
-        return 0;  
+            Flashcard createdFlashcard = flashcardService.createFlashcard(flashcard);
+            return ResponseEntity.ok(createdFlashcard);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(null);
+        }
     }
 
+    // Get all flashcards
+    @GetMapping
+    public ResponseEntity<List<Flashcard>> getAllFlashcards() {
+        List<Flashcard> flashcards = flashcardService.getAllFlashcards();
+        return ResponseEntity.ok(flashcards);
+    }
 
-    public void calculateSomething(int x, int y  
+    // Update an existing flashcard by ID
+    @PutMapping("/{id}")
+    public ResponseEntity<Flashcard> updateFlashcard(
+            @PathVariable Long id,
+            @RequestBody Flashcard updatedFlashcard) {
+        try {
+            Flashcard flashcard = flashcardService.updateFlashcard(id, updatedFlashcard);
+            return ResponseEntity.ok(flashcard);
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build(); // Return 404 if not found
+        }
+    }
+
+    // Delete a flashcard by ID
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> deleteFlashcard(@PathVariable Long id) {
+        try {
+            flashcardService.deleteFlashcard(id);
+            return ResponseEntity.ok("Flashcard deleted successfully!");
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build(); // Return 404 if not found
+        }
+    }
 }
