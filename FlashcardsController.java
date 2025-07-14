@@ -15,7 +15,7 @@ public class FlashcardsController {
 
     @Autowired
     private FlashcardService flashcardService;
-
+    private FlashcardService flashcardService;
     // Create a new flashcard
     @PostMapping
     public ResponseEntity<Flashcard> createFlashcard(@RequestBody Flashcard flashcard) {
