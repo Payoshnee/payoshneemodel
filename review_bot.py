@@ -1,4 +1,3 @@
-# review_bot.py (FINAL PATCHED VERSION)
 import os
 import subprocess
 import json
@@ -41,6 +40,22 @@ def retry_request(func, retries=3, delay=2):
             time.sleep(delay)
     print(f"[ERROR] All {retries} attempts failed.")
     return None
+    
+# To resolve this issue, fetch the correct PR head SHA and use it instead of GITHUB_SHA
+
+def get_pr_head_commit():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_NUMBER}"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()["head"]["sha"]
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch PR head commit: {e}")
+        return GITHUB_SHA  # fallback
 
 def get_changed_java_files():
     result = subprocess.run(["git", "diff", "--name-only", "origin/main"], stdout=subprocess.PIPE, check=True)
@@ -63,30 +78,50 @@ def redact_sensitive_content(text):
 def call_llm(diff_text):
     diff_text = redact_sensitive_content(diff_text)
     prompt = f"""
-You are AutoReviewBot, an automated reviewer that enforces internal Java rules.  
-Respond ONLY with a valid JSON array (no markdown).  
+You are **AutoReviewBot**, a precision-focused AI code reviewer tasked with enforcing internal **Java coding standards** in a pull request.
+
+OUTPUT FORMAT:  
+Respond with a **valid JSON array only**. Do NOT include any text, markdown, comments, or explanations outside the JSON.
+
+──────────────────────────── RULE DEFINITIONS ────────────────────────────
 <<RULES
 {RULE_PROMPT}
 RULES
+
+──────────────────────────── OUTPUT SCHEMA ──────────────────────────────
 <<SCHEMA
-Each array element must have:  
-rule (string from id above)  
-line (integer, line number in NEW file)  
-explanation (<=200 chars)  
-suggestion (<=100 chars)  
-severity (error|warning|info)  
-code_fix (string, may be empty)  
+Each JSON object in the array must contain the following fields:
+- rule: string — Must exactly match one of the rule IDs defined in <<RULES>>
+- line: integer — Line number of the NEW version of the file where violation occurs
+- explanation: string — Clear explanation of the violation (≤ 200 characters)
+- suggestion: string — Suggested improvement (≤ 100 characters)
+- severity: one of [error, warning, info]
+- code_fix: string — Suggested code correction (or empty string if none)
 SCHEMA
+
+──────────────────────────── CODE DIFF ──────────────────────────────
 <<DIFF
 {diff_text}
 DIFF
-TASKS
-1. Review only the changed lines in <<DIFF>> against <<RULES>>.  
-2. Emit a JSON array that validates against <<SCHEMA>>.  
-3. Include at most 40 elements.  
-4. Think through steps internally but output ONLY the JSON array.  
-5. If no violations, output [].
-END
+
+──────────────────────────── TASK INSTRUCTIONS ──────────────────────────────
+OBJECTIVE:
+Analyze ONLY the **changed lines** in the <<DIFF>> section and detect violations based on <<RULES>>.
+
+THINKING STEPS (internal only):
+- Parse the diff accurately.
+- Match each modified line against all applicable rule definitions.
+- Construct structured JSON objects only for lines that violate a rule.
+
+OUTPUT GUIDELINES:
+- Respond ONLY with a JSON array of violation objects matching the <<SCHEMA>>.
+- Output MUST be valid JSON parsable by Python’s `json.loads`.
+- Return an empty array `[]` if there are no violations.
+- Maximum number of violation objects: 40
+- DO NOT include markdown, headings, commentary, or text before/after the array.
+
+END OF INSTRUCTIONS
+
 """
     def do_openai_call():
         response = client.chat.completions.create(
@@ -200,6 +235,7 @@ def maintainer_override_exists():
 
 # === MAIN EXECUTION ===
 start_time = time.time()
+pr_head_sha = get_pr_head_commit()
 
 if not os.path.exists(LOG_FILE):
     with open(LOG_FILE, "w", newline="") as csvfile:
@@ -212,6 +248,7 @@ if maintainer_override_exists():
     exit(0)
 
 violations_total = []
+pr_head_sha = get_pr_head_commit()
 changed_files = get_changed_java_files()
 for file in changed_files:
     diff = get_diff(file)
@@ -224,7 +261,7 @@ for file in changed_files:
         body = f"**{v['rule']}**\n\n{v['explanation']}\n💡 Suggestion: {v['suggestion']}\n```java\n{v.get('code_fix', '// no fix provided')}\n```"
         position = diff_positions.get(v['line'])
         if position:
-            retry_request(lambda: post_inline_comment(GITHUB_REPO, PR_NUMBER, body, GITHUB_SHA, file, position))
+            retry_request(lambda: post_inline_comment(GITHUB_REPO, PR_NUMBER, body, pr_head_sha, file, position))
         else:
             print(f"[WARN] No diff position found for {file} line {v['line']}")
 
