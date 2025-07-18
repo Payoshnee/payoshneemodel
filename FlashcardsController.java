@@ -25,6 +25,7 @@ public class FlashcardsController {
         return ResponseEntity.ok(createdFlashcard);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(null);
+            return ResponseEntity.badRequest().body(null);
         }
     }
 
